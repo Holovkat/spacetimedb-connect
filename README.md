@@ -1,13 +1,17 @@
 # spacetimedb-connect
 
-`spacetimedb-connect` is a SpacetimeDB connector for SQL tooling and interoperability.
-It currently includes:
+`spacetimedb-connect` is a SpacetimeDB (v2.0) connector for SQL tooling and interoperability.
 
-- a pgwire server that lets Postgres clients query SpacetimeDB directly
+No need to reinvent a Postgres UI or cli for your Spacetimedb based app. Provides minimal RDBMS functionality without going through the effort of a custom data manager in your application.
+- Basic CRUD is supported
+- Use familiar Postgres UI or psql cli directly
+- Access the reducers as procedure objects
+- Works locally or web exposed spacetimedb endpoints.
 
-The examples below use placeholder database names such as `example-app-db`.
-The live integration tests in this repo currently run against an FMS-GLM environment, but the connector itself is intended to discover and bridge general SpacetimeDB databases.
-For normal day-to-day use of the connector, local Postgres is not required.
+  
+It currently includes a pgwire server that lets Postgres clients query SpacetimeDB directly
+
+The connector is intended to discover and bridge general SpacetimeDB databases.
 
 ## Pgwire-first MVP
 
@@ -21,9 +25,11 @@ The pgwire server lets normal Postgres clients connect without materializing row
 - Host: `127.0.0.1`
 - Port: `45434`
 - User: `shim`
-- Password: `shim`
+- Password: **same as user**
 - Database: `postgres` for metadata or any discovered source database such as `example-app-db`
 
+**currently we have fixed an auth user and password as place holder values for tools like pgAdmin to allow saving a value. The connector uses the spacetimedb key to access the data**
+  
 Current pgwire scope:
 
 - startup/auth handshake
@@ -47,6 +53,7 @@ Not supported yet:
 - full DDL/transaction semantics
 
 ## Why this shape
+No need to reinvent a Postgres UI or cli for your Spacetimedb app. Provides minimal RDBMS functionality without going through the effort of a custom RDBMS for each app you have.
 
 This keeps client impact minimal:
 

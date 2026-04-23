@@ -112,13 +112,13 @@ export async function runCli(command = process.argv[2] ?? "sync"): Promise<void>
     return;
   }
 
-  if (command === "list-databases" || command === "list-fms-databases") {
+  if (command === "list-databases") {
     const databaseNames = await discoverDatabases(new StdbClient());
     console.log(databaseNames.join("\n"));
     return;
   }
 
-  if (command === "sync-all" || command === "sync-fms") {
+  if (command === "sync-all") {
     await syncAll();
     return;
   }

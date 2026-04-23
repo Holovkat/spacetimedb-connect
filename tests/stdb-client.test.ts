@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type FetchMock = ReturnType<typeof vi.fn>;
+const ENV_KEYS = ["STDB_BASE_URL", "STDB_AUTH_TOKEN", "STDB_SOURCE_DATABASE"] as const;
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -12,15 +13,30 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 
 describe("StdbClient HTTP discovery", () => {
   let fetchMock: FetchMock;
+  let previousEnv: Record<(typeof ENV_KEYS)[number], string | undefined>;
 
   beforeEach(() => {
     vi.resetModules();
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    previousEnv = Object.fromEntries(
+      ENV_KEYS.map((key) => [key, process.env[key]])
+    ) as Record<(typeof ENV_KEYS)[number], string | undefined>;
+    process.env.STDB_BASE_URL = "http://localhost:3000";
+    process.env.STDB_AUTH_TOKEN = "test-token";
+    process.env.STDB_SOURCE_DATABASE = "example-app-db";
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    for (const key of ENV_KEYS) {
+      const value = previousEnv[key];
+      if (value === undefined) {
+        delete process.env[key];
+        continue;
+      }
+      process.env[key] = value;
+    }
   });
 
   it("fetches database schema over HTTP and caches the response", async () => {

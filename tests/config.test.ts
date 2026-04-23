@@ -37,12 +37,12 @@ describe("config helpers", () => {
     });
   });
 
-  it("ignores FMS-specific admin token fallbacks", () => {
+  it("ignores tenant-specific admin token fallbacks", () => {
     expect(
       parseBaseEnv({
         STDB_BASE_URL: "http://localhost:6900",
         STDB_AUTH_TOKEN: "token",
-        FMS_GLM_STDB_ADMIN_TOKEN: "legacy-token",
+        EXAMPLE_APP_STDB_ADMIN_TOKEN: "legacy-token",
         STDB_SOURCE_DATABASE: "example-app-db",
       })
     ).toMatchObject({

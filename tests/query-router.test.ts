@@ -203,6 +203,15 @@ describe("pgwire query router", () => {
     ]);
   });
 
+  it("filters pg_database detail probes by oid", async () => {
+    const result = await router.execute(
+      "SELECT db.oid as did, db.datname FROM pg_catalog.pg_database db WHERE db.oid = 20000",
+      "postgres"
+    );
+
+    expect(result.rows).toEqual([["20000", PRIMARY_DATABASE]]);
+  });
+
   it("returns schema browser metadata for pgAdmin schema support probes", async () => {
     const result = await router.execute(
       "SELECT nsp.nspname as schema_name, (CASE WHEN nspname LIKE 'pg\\_%' OR nspname = 'information_schema' THEN true ELSE false END) as is_catalog, CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_proc, pg_catalog.pg_namespace WHERE pg_proc.pronamespace = pg_namespace.oid AND proname = 'edb_gen_shobj_ddl' AND nspname = 'sys' ) THEN true WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_proc, pg_catalog.pg_namespace WHERE pg_proc.pronamespace = pg_namespace.oid AND proname = 'dbms_metadata_get_ddl' AND nspname = 'pg_catalog' ) THEN true ELSE false END as db_support FROM pg_catalog.pg_namespace nsp WHERE nsp.oid = 2200::OID",

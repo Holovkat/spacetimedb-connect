@@ -1437,6 +1437,16 @@ function applyNaiveFilters(
       result.rows = result.rows.filter((row) => row[datnameIndex] === currentDatabaseName);
     }
 
+    const databaseOidMatch = filterSql.match(/\b(?:db\.)?oid\s*=\s*(\d+)(?:::\s*oid)?/i);
+    if (databaseOidMatch && oidIndex >= 0) {
+      result.rows = result.rows.filter((row) => row[oidIndex] === databaseOidMatch[1]);
+    }
+
+    const databaseNameMatch = filterSql.match(/\b(?:db\.)?datname\s*=\s*'([^']+)'/i);
+    if (databaseNameMatch && datnameIndex >= 0) {
+      result.rows = result.rows.filter((row) => row[datnameIndex] === databaseNameMatch[1]);
+    }
+
     const browserDatabasesMatch = sql.match(
       /\boid\s*>\s*(\d+)(?:::\w+)?[\s\S]*\bdatname\s+in\s*\(([^)]+)\)/i
     );

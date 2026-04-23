@@ -1,26 +1,54 @@
-# AGENTS.md instructions for /Users/tonyholovka/workspace/spacetimedb-connect
+# AGENTS.md instructions for /Users/tonyholovka/workspace/spacetimedb-ui
 
 <INSTRUCTIONS>
-You are an Orchestrator of tasks for me
-To help with projects use and maintain notes in the following mcp services affine, jcodemunch, jdocmunch. Make sure for any code project you must review the documents in the associated /docs /design /features folders if they exist and follow them.
+This repository is the source project for `spacetimedb-connect`: a TypeScript bridge that lets Postgres tooling work against SpacetimeDB through two paths:
 
-Use yours skills always. Update them if you think they need adjustments or to enforce learnings from any sesssion; do this review step after commits.
+- snapshot sync into a real Postgres database
+- a pgwire server that exposes SpacetimeDB through a Postgres-compatible interface
 
-Always review code before commits; the goal is for simplicity and elegant best coding practices including minimise use of branching code with if-else nested branches; use despatching syle code patterns. Keep to atomic and modular design patterns and maintain tests along the way.
+## First read
+- Read `README.md` before changing behavior.
+- If `/docs`, `/design`, or `/features` exists, read the relevant files before editing code.
+- When docs and tests disagree, trust the code and tests first, then fix the docs explicitly.
 
-## JavaScript REPL (Node)
-- Use `js_repl` for Node-backed JavaScript with top-level await in a persistent kernel.
-- `js_repl` is a freeform/custom tool. Direct `js_repl` calls must send raw JavaScript tool input (optionally with first-line `// codex-js-repl: timeout_ms=15000`). Do not wrap code in JSON (for example `{"code":"..."}`), quotes, or markdown code fences.
-- Helpers: `codex.cwd`, `codex.homeDir`, `codex.tmpDir`, `codex.tool(name, args?)`, and `codex.emitImage(imageLike)`.
-- `codex.tool` executes a normal tool call and resolves to the raw tool output object. Use it for shell and non-shell tools alike. Nested tool outputs stay inside JavaScript unless you emit them explicitly.
-- `codex.emitImage(...)` adds one image to the outer `js_repl` function output each time you call it, so you can call it multiple times to emit multiple images. It accepts a data URL, a single `input_image` item, an object like `{ bytes, mimeType }`, or a raw tool response object with exactly one image and no text. It rejects mixed text-and-image content.
-- `codex.tool(...)` and `codex.emitImage(...)` keep stable helper identities across cells. Saved references and persisted objects can reuse them in later cells, but async callbacks that fire after a cell finishes still fail because no exec is active.
-- Request full-resolution image processing with `detail: "original"` only when the `view_image` tool schema includes a `detail` argument. The same availability applies to `codex.emitImage(...)`: if `view_image.detail` is present, you may also pass `detail: "original"` there. Use this when high-fidelity image perception or precise localization is needed, especially for CUA agents.
-- Raw MCP image blocks can request the same behavior by returning `_meta: { "codex/imageDetail": "original" }` on the image content item.
-- Example of sharing an in-memory Playwright screenshot: `await codex.emitImage({ bytes: await page.screenshot({ type: "jpeg", quality: 85 }), mimeType: "image/jpeg", detail: "original" })`.
-- Example of sharing a local image tool result: `await codex.emitImage(codex.tool("view_image", { path: "/absolute/path", detail: "original" }))`.
-- When encoding an image to send with `codex.emitImage(...)` or `view_image`, prefer JPEG at about 85 quality when lossy compression is acceptable; use PNG when transparency or lossless detail matters. Smaller uploads are faster and less likely to hit size limits.
-- Top-level bindings persist across cells. If a cell throws, prior bindings remain available and bindings that finished initializing before the throw often remain usable in later cells. For code you plan to reuse across cells, prefer declaring or assigning it in direct top-level statements before operations that might throw. If you hit `SyntaxError: Identifier 'x' has already been declared`, first reuse the existing binding, reassign a previously declared `let`, or pick a new descriptive name. Use `{ ... }` only for a short temporary block when you specifically need local scratch names; do not wrap an entire cell in block scope if you want those names reusable later. Reset the kernel with `js_repl_reset` only when you need a clean state.
-- Top-level static import declarations (for example `import x from "./file.js"`) are currently unsupported in `js_repl`; use dynamic imports with `await import("pkg")`, `await import("./file.js")`, or `await import("/abs/path/file.mjs")` instead. Imported local files must be ESM `.js`/`.mjs` files and run in the same REPL VM context. Bare package imports always resolve from REPL-global search roots (`CODEX_JS_REPL_NODE_MODULE_DIRS`, then cwd), not relative to the imported file location. Local files may statically import only other local relative/absolute/`file://` `.js`/`.mjs` files; package and builtin imports from local files must stay dynamic. `import.meta.resolve()` returns importable strings such as `file://...`, bare package names, and `node:...` specifiers. Local file modules reload between execs, while top-level bindings persist until `js_repl_reset`.
-- Avoid direct access to `process.stdout` / `process.stderr` / `process.stdin`; it can corrupt the JSON line protocol. Use `console.log`, `codex.tool(...)`, and `codex.emitImage(...)`.
+## Project notes
+- Keep durable project notes in AFFiNE under `Projects/spacetimedb-connect`.
+- Record code check-ins after commits and capture reusable lessons when behavior, compatibility, or workflow changes.
+- Use `jcodemunch` and `jdocmunch` for code/doc lookup when those indexes are available, especially before broad structural changes.
+
+## Architecture map
+- `src/main.ts`: CLI entrypoint and top-level command dispatch for `sync`, discovery, and pgwire serving.
+- `src/config.ts`: env loading, `~/.secure/.env` fallback, token resolution, and config validation.
+- `src/shim/*`: SpacetimeDB discovery/querying, row normalization, and Postgres table refresh/materialization.
+- `src/pgwire/*`: protocol framing, server connection state, SQL routing, metadata emulation, and Postgres-client compatibility.
+- `tests/*`: executable support matrix. Treat tests as the current behavior contract.
+
+## Behavioral guardrails
+- Do not assume pgwire is read-only. Current code and tests support metadata queries, `SELECT`, extended query flow, and authorized `INSERT` / `UPDATE` / `DELETE`.
+- Current unsupported surface includes DDL/admin statements, `CALL`, `COPY`, `TRUNCATE`, `RETURNING`, and full PostgreSQL catalog or transaction semantics.
+- `BEGIN` / `COMMIT` / `ROLLBACK`, `SET`, and `SHOW` are compatibility shims. Do not accidentally turn them into real transaction handling without an explicit requirement.
+- Keep database discovery generic. Do not hardcode `fms-glm` names into production logic unless the user explicitly asks for tenant-specific behavior.
+- Preserve support for paired `*_DB` / `*_TOKEN` env mappings and the `~/.secure/.env` fallback path.
+- Never commit secrets, `.env`, `node_modules`, or generated `dist`.
+
+## Change rules
+- Keep command names and operator workflows stable unless the user asks for a breaking change.
+- Isolate pgwire compatibility changes to `src/pgwire/*` and sync/materialization changes to `src/shim/*` whenever possible.
+- Prefer small dispatching helpers and table-driven routing over growing nested `if` / `else` chains.
+- When adding compatibility for a Postgres client probe, add or update a focused test that locks the behavior down.
+- Keep error remapping explicit. If a SpacetimeDB error is translated into PostgreSQL semantics, preserve the SQLSTATE, detail, and hint behavior intentionally.
+
+## Validation
+- Run `npm run build` after any code change.
+- Run `npm test` for normal validation.
+- If config parsing changes, verify `tests/config.test.ts`.
+- If type normalization or schema mapping changes, verify `tests/normalize.test.ts`.
+- If pgwire protocol, routing, or metadata emulation changes, verify `tests/protocol.test.ts` and `tests/query-router.test.ts`.
+- Use `npm run test:live` and `tests/pgwire-live.test.ts` only when live SpacetimeDB credentials are available.
+- If Docker or Postgres bootstrap changes, verify `docker-compose.yml` and `npm run postgres:up`.
+
+## Documentation expectations
+- Keep `README.md` aligned with the actual tested support matrix.
+- When behavior changes for DB clients, document the exact supported and unsupported SQL surface.
+- When this project is moved into the `Holovkat/spacetimedb-connect` repo, preserve this file and the remote `LICENSE`.
 </INSTRUCTIONS>

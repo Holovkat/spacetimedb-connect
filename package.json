@@ -1,0 +1,33 @@
+{
+  "name": "spacetimedb-postgres-shim",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/main.ts sync",
+    "sync": "tsx src/main.ts sync",
+    "list-tables": "tsx src/main.ts list-tables",
+    "list-databases": "tsx src/main.ts list-databases",
+    "list-fms-databases": "tsx src/main.ts list-fms-databases",
+    "sync-all": "tsx src/main.ts sync-all",
+    "sync-fms": "tsx src/main.ts sync-fms",
+    "serve:pgwire": "tsx src/main.ts serve-pgwire",
+    "test": "vitest run",
+    "test:live": "vitest run tests/live-sync.test.ts",
+    "postgres:up": "docker compose up -d postgres",
+    "postgres:down": "docker compose down"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "pg": "^8.16.3",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.1",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}

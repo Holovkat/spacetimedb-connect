@@ -1,36 +1,22 @@
 # spacetimedb-connect
 
-`spacetimedb-connect` is a Postgres-facing connector for SpacetimeDB.
+`spacetimedb-connect` is a SpacetimeDB connector for SQL tooling and interoperability.
 It currently includes:
 
-- a sync tool that materializes public SpacetimeDB tables into Postgres
 - a pgwire server that lets Postgres clients query SpacetimeDB directly
 
 The examples below use placeholder database names such as `example-app-db`.
 The live integration tests in this repo currently run against an FMS-GLM environment, but the connector itself is intended to discover and bridge general SpacetimeDB databases.
+For normal day-to-day use of the connector, local Postgres is not required.
 
-## Current MVP
+## Pgwire-first MVP
 
-Example source configuration:
+If you want to connect a SQL tool directly to SpacetimeDB, the pgwire server is the primary path:
 
 - SpacetimeDB database: `example-app-db`
-- Target Postgres database: `example-app-db`
-- Target schema: `public`
+- Client connection database: `postgres` for metadata or any discovered source database such as `example-app-db`
 
-By default the snapshot path mirrors every public user table exposed by the selected source database.
-In the current live test environment that includes application-specific tables such as `conversation_items`, `orders`, and `inventory`, but those names are examples rather than requirements.
-
-The snapshot mirror path is currently:
-
-- read-only
-- full refresh only
-- discovers all public user tables by default
-- can be narrowed with include and exclude filters
-- can mirror one source database or every discovered database on the current runtime
-
-## Pass-through MVP
-
-The live path is a pgwire server that lets normal Postgres clients connect without materializing row copies first.
+The pgwire server lets normal Postgres clients connect without materializing row copies first.
 
 - Host: `127.0.0.1`
 - Port: `45434`
@@ -62,10 +48,10 @@ Not supported yet:
 
 ## Why this shape
 
-This keeps UI impact minimal:
+This keeps client impact minimal:
 
-- point any Postgres UI at one normal Postgres database
-- browse the mirrored data under `public`
+- point a Postgres UI at the pgwire server for direct SpacetimeDB access
+- optionally compare against a local Postgres mirror when you are debugging or checking alignment
 
 Longer-term, the same shim can mirror additional SpacetimeDB databases into additional Postgres databases, one connection per logical source database.
 
@@ -75,65 +61,36 @@ Database discovery is now generic:
 - then resolve each identity through `GET /v1/database/:identity/names`
 - if discovery is incomplete or unavailable, provide explicit names with `STDB_DATABASES`
 
-## Quick start
+## Quick start: pgwire
 
 1. Copy `.env.example` to `.env`
 2. Fill in `STDB_AUTH_TOKEN`
    Optional:
    - `STDB_ADMIN_AUTH_TOKEN` for DML if it differs from the read token
    - database-specific `*_DB` / `*_TOKEN` pairs in `~/.secure/.env`
-3. Start Postgres:
-
-```bash
-npm run postgres:up
-```
-
-4. Install dependencies:
+3. Install dependencies:
 
 ```bash
 npm install
 ```
 
-5. Run a full sync:
-
-```bash
-npm run sync
-```
-
-6. Optionally validate discovery against the live source:
-
-```bash
-npm run test:live
-```
-
-7. List all currently discovered databases:
-
-```bash
-npm run list-databases
-```
-
-8. Mirror all discovered databases into Postgres:
-
-```bash
-npm run sync-all
-```
-
-9. Run the live pgwire pass-through server:
+4. Run the pgwire server:
 
 ```bash
 npm run serve:pgwire
 ```
 
-## Output model
+5. Optionally validate discovery against the live source:
 
-For each mirrored table the shim:
+```bash
+npm run test:live
+```
 
-- recreates the table in Postgres
-- adds typed columns where possible
-- adds metadata columns:
-  - `_shim_source_database`
-  - `_shim_synced_at`
-  - `_shim_row_hash`
+6. List all currently discovered databases:
+
+```bash
+npm run list-databases
+```
 
 ## Notes
 
@@ -148,3 +105,5 @@ For each mirrored table the shim:
 - If `STDB_ADMIN_AUTH_TOKEN` is present, the shim prefers it for DML while keeping the normal token path for reads.
 - Use `SHIM_INCLUDE_TABLES=table_a,table_b` or `SHIM_EXCLUDE_TABLES=table_c,table_d` to narrow the set.
 - The pgwire server currently listens on `PGWIRE_HOST` / `PGWIRE_PORT` and is intended for live database tooling first.
+- Footnote for debugging/alignment only: if you want a local Postgres copy to compare against SpacetimeDB behavior, start Postgres with `npm run postgres:up` and use `npm run sync` or `npm run sync-all`.
+- In that optional mirror mode, the shim recreates tables in Postgres and adds `_shim_source_database`, `_shim_synced_at`, and `_shim_row_hash` metadata columns.

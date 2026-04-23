@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { env } from "../config.js";
+import { env, getSyncEnv } from "../config.js";
 import type { NormalizedTable } from "./types.js";
 import { StdbClient } from "./stdb-client.js";
 
@@ -10,9 +10,9 @@ function quoteIdentifier(identifier: string): string {
 }
 
 export async function ensureTargetDatabase(
-  targetDatabase = env.PG_TARGET_DATABASE
+  targetDatabase = getSyncEnv().PG_TARGET_DATABASE
 ): Promise<void> {
-  const pool = new Pool({ connectionString: env.PG_SUPER_URL });
+  const pool = new Pool({ connectionString: getSyncEnv().PG_SUPER_URL });
   try {
     const exists = await pool.query(
       "SELECT 1 FROM pg_database WHERE datname = $1",
@@ -27,8 +27,10 @@ export async function ensureTargetDatabase(
   }
 }
 
-export function createTargetPool(targetDatabase = env.PG_TARGET_DATABASE): Pool {
-  const superUrl = new URL(env.PG_SUPER_URL);
+export function createTargetPool(
+  targetDatabase = getSyncEnv().PG_TARGET_DATABASE
+): Pool {
+  const superUrl = new URL(getSyncEnv().PG_SUPER_URL);
   superUrl.pathname = `/${targetDatabase}`;
   return new Pool({ connectionString: superUrl.toString() });
 }
@@ -38,14 +40,15 @@ export async function refreshTable(
   normalized: NormalizedTable,
   sourceDatabase = env.STDB_SOURCE_DATABASE
 ): Promise<void> {
+  const syncEnv = getSyncEnv();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(
-      `CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(env.PG_TARGET_SCHEMA)}`
+      `CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(syncEnv.PG_TARGET_SCHEMA)}`
     );
 
-    const qualifiedTable = `${quoteIdentifier(env.PG_TARGET_SCHEMA)}.${quoteIdentifier(normalized.tableName)}`;
+    const qualifiedTable = `${quoteIdentifier(syncEnv.PG_TARGET_SCHEMA)}.${quoteIdentifier(normalized.tableName)}`;
 
     await client.query(`DROP TABLE IF EXISTS ${qualifiedTable}`);
 

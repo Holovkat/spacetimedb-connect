@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { env, parseTableList } from "./config.js";
+import { env, getSyncEnv, parseTableList } from "./config.js";
 import { listenPgwireServer } from "./pgwire/server.js";
 import { normalizeResult } from "./shim/normalize.js";
 import { createTargetPool, ensureTargetDatabase, refreshTable } from "./shim/postgres.js";
@@ -74,7 +74,7 @@ export async function syncDatabase(sourceDatabase: string, targetDatabase = sour
 }
 
 export async function sync(): Promise<void> {
-  await syncDatabase(env.STDB_SOURCE_DATABASE, env.PG_TARGET_DATABASE);
+  await syncDatabase(env.STDB_SOURCE_DATABASE, getSyncEnv().PG_TARGET_DATABASE);
 }
 
 export async function syncAll(): Promise<void> {

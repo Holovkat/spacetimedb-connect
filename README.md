@@ -1,32 +1,26 @@
-# SpacetimeDB Postgres Shim
+# spacetimedb-connect
 
-This repo now has two paths:
+`spacetimedb-connect` is a Postgres-facing connector for SpacetimeDB.
+It currently includes:
 
-- a snapshot mirror into real Postgres databases
-- a read-only pgwire pass-through server for live browsing without copying rows
+- a sync tool that materializes public SpacetimeDB tables into Postgres
+- a pgwire server that lets Postgres clients query SpacetimeDB directly
+
+The examples below use placeholder database names such as `example-app-db`.
+The live integration tests in this repo currently run against an FMS-GLM environment, but the connector itself is intended to discover and bridge general SpacetimeDB databases.
 
 ## Current MVP
 
-First source:
+Example source configuration:
 
-- SpacetimeDB database: `fms-glm-org-tt`
-- Target Postgres database: `fms-glm-org-tt`
+- SpacetimeDB database: `example-app-db`
+- Target Postgres database: `example-app-db`
 - Target schema: `public`
 
-Current mirrored tables:
+By default the snapshot path mirrors every public user table exposed by the selected source database.
+In the current live test environment that includes application-specific tables such as `conversation_items`, `orders`, and `inventory`, but those names are examples rather than requirements.
 
-1. `conversation_items`
-2. `conversation_sessions`
-3. `work_requisitions`
-4. `users`
-5. `orders`
-6. `daily_plans`
-7. `customers`
-8. `vehicles`
-9. `load_plans`
-10. `inventory`
-
-The current implementation is:
+The snapshot mirror path is currently:
 
 - read-only
 - full refresh only
@@ -42,7 +36,7 @@ The live path is a pgwire server that lets normal Postgres clients connect witho
 - Port: `45434`
 - User: `shim`
 - Password: `shim`
-- Database: `postgres` for metadata or any discovered database like `fms-glm-org-tt`
+- Database: `postgres` for metadata or any discovered source database such as `example-app-db`
 
 Current pgwire scope:
 
@@ -153,4 +147,4 @@ For each mirrored table the shim:
 - The shim loads `~/.secure/.env` as a fallback secret source and recognizes paired `*_DB` / `*_TOKEN` entries for per-database auth mapping.
 - If `STDB_ADMIN_AUTH_TOKEN` is present, the shim prefers it for DML while keeping the normal token path for reads.
 - Use `SHIM_INCLUDE_TABLES=table_a,table_b` or `SHIM_EXCLUDE_TABLES=table_c,table_d` to narrow the set.
-- The pgwire server currently listens on `PGWIRE_HOST` / `PGWIRE_PORT` and is intended for live read-only browsing first.
+- The pgwire server currently listens on `PGWIRE_HOST` / `PGWIRE_PORT` and is intended for live database tooling first.

@@ -1,17 +1,53 @@
 {
-  "name": "spacetimedb-postgres-shim",
-  "private": true,
+  "name": "spacetimedb-connect",
   "version": "0.1.0",
+  "description": "Expose SpacetimeDB v2.0 through a PostgreSQL-compatible pgwire connector.",
   "type": "module",
+  "license": "MIT",
+  "main": "./dist/main.js",
+  "bin": {
+    "spacetimedb-connect": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Holovkat/spacetimedb-connect.git"
+  },
+  "homepage": "https://github.com/Holovkat/spacetimedb-connect#readme",
+  "bugs": {
+    "url": "https://github.com/Holovkat/spacetimedb-connect/issues"
+  },
+  "keywords": [
+    "spacetimedb",
+    "postgres",
+    "pgwire",
+    "connector",
+    "sql"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/main.ts sync",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/main.js', 0o755)\"",
+    "prepack": "npm run build",
+    "dev": "tsx src/main.ts serve",
+    "serve": "tsx src/main.ts serve",
     "sync": "tsx src/main.ts sync",
     "list-tables": "tsx src/main.ts list-tables",
     "list-databases": "tsx src/main.ts list-databases",
     "sync-all": "tsx src/main.ts sync-all",
-    "serve:pgwire": "tsx src/main.ts serve-pgwire",
+    "serve:pgwire": "tsx src/main.ts serve",
     "test": "vitest run",
+    "test:cli": "vitest run tests/cli.test.ts",
     "test:live": "vitest run tests/live-sync.test.ts",
     "postgres:up": "docker compose up -d postgres",
     "postgres:down": "docker compose down"

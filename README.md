@@ -26,10 +26,11 @@ Under the hood, the connector exposes a pgwire-compatible surface. For normal da
 Install the connector from GitHub:
 
 ```bash
-npm install -g github:Holovkat/spacetimedb-connect
+npm install -g --install-links=true github:Holovkat/spacetimedb-connect
 ```
 
 For a pinned install, append a tag, branch, or commit SHA after `#`.
+The `--install-links=true` flag avoids broken symlinks when a local npm config sets `install-links=false`.
 
 Create a `.env` file in the directory where you will run the connector:
 

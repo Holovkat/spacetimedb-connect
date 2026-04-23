@@ -6,6 +6,10 @@ import type { StdbClient } from "./shim/stdb-client.js";
 const PUBLIC_COMMANDS = [
   "help",
   "serve",
+  "install-service",
+  "uninstall-service",
+  "restart-service",
+  "status",
   "list-databases",
   "list-tables",
   "sync",
@@ -133,6 +137,10 @@ export function buildHelpText(): string {
     "",
     "Commands:",
     "  serve            Start the pgwire connector server",
+    "  install-service  Install and start the macOS launchd service",
+    "  uninstall-service Remove the macOS launchd service",
+    "  restart-service  Restart the macOS launchd service",
+    "  status           Show macOS launchd service status",
     "  list-databases   List reachable SpacetimeDB databases",
     "  list-tables      List selected public tables from the source database",
     "  sync             Optional Postgres debug/alignment sync for the source database",
@@ -178,6 +186,26 @@ export async function runCli(command?: string): Promise<void> {
 
   if (normalizedCommand === "sync") {
     await sync();
+    return;
+  }
+
+  if (
+    normalizedCommand === "install-service" ||
+    normalizedCommand === "uninstall-service" ||
+    normalizedCommand === "restart-service" ||
+    normalizedCommand === "status"
+  ) {
+    const { runLaunchdAction } = await import("./launchd.js");
+    const action =
+      normalizedCommand === "install-service"
+        ? "install"
+        : normalizedCommand === "uninstall-service"
+          ? "uninstall"
+          : normalizedCommand === "restart-service"
+            ? "restart"
+            : "status";
+
+    console.log(runLaunchdAction(action));
     return;
   }
 

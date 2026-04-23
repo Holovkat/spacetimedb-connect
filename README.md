@@ -48,6 +48,30 @@ Start the connector:
 spacetimedb-connect serve
 ```
 
+For the recommended persistent local pgAdmin workflow on macOS, install the
+launchd service from the same directory as your `.env`:
+
+```bash
+spacetimedb-connect install-service
+```
+
+That starts `spacetimedb-connect` now and starts it again at login. Use
+`spacetimedb-connect status`, `spacetimedb-connect restart-service`, and
+`spacetimedb-connect uninstall-service` to inspect or manage it. The launchd
+service writes logs to `~/Library/Logs/spacetimedb-connect/`.
+
+If you prefer Docker instead of launchd, run the connector with the optional
+compose profile from this repository:
+
+```bash
+npm run connect:docker:up
+```
+
+Docker publishes the same local client port, `127.0.0.1:45434`. If your
+`.env` points `STDB_BASE_URL` at a service running on the host machine, use a
+container-reachable host such as `http://host.docker.internal:6900` instead of
+`http://localhost:6900`.
+
 Connect your SQL tool or CLI:
 
 - Host: `127.0.0.1`
@@ -64,6 +88,8 @@ Actual upstream access to SpacetimeDB is controlled by the configured `STDB_AUTH
 ```bash
 spacetimedb-connect --help
 spacetimedb-connect serve
+spacetimedb-connect install-service
+spacetimedb-connect status
 spacetimedb-connect list-databases
 spacetimedb-connect list-tables
 ```

@@ -10,11 +10,14 @@ describe("cli packaging surface", () => {
     expect(normalizeCliCommand("serve")).toBe("serve-pgwire");
     expect(normalizeCliCommand("--help")).toBe("help");
     expect(normalizeCliCommand("-h")).toBe("help");
+    expect(normalizeCliCommand("install-service")).toBe("install-service");
+    expect(normalizeCliCommand("status")).toBe("status");
   });
 
   it("renders package help text for the public command surface", () => {
     expect(buildHelpText()).toContain("Usage: spacetimedb-connect <command>");
     expect(buildHelpText()).toContain("serve");
+    expect(buildHelpText()).toContain("install-service");
     expect(buildHelpText()).toContain("sync");
   });
 

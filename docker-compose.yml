@@ -1,4 +1,16 @@
 services:
+  spacetimedb-connect:
+    build: .
+    container_name: spacetimedb-connect
+    restart: unless-stopped
+    profiles: ["connect"]
+    env_file:
+      - .env
+    environment:
+      PGWIRE_HOST: 0.0.0.0
+    ports:
+      - "45434:45434"
+
   postgres:
     image: postgres:16-alpine
     container_name: spacetimedb-ui-postgres

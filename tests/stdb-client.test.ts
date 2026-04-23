@@ -82,7 +82,7 @@ describe("StdbClient HTTP discovery", () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          addresses: [firstDatabase, secondDatabase],
+          identities: [firstDatabase, secondDatabase],
         })
       );
 
@@ -129,7 +129,7 @@ describe("StdbClient HTTP discovery", () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          addresses: [firstDatabase, secondDatabase],
+          identities: [firstDatabase, secondDatabase],
         })
       )
       .mockResolvedValueOnce(
@@ -150,6 +150,35 @@ describe("StdbClient HTTP discovery", () => {
     await expect(client.listDiscoveredDatabases()).resolves.toEqual([
       secondDatabase,
       "example-app-db",
+    ]);
+  });
+
+  it("accepts legacy address discovery responses", async () => {
+    const callerIdentity = "a".repeat(64);
+    const databaseIdentity = "b".repeat(64);
+
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { reducers: [] },
+          {
+            headers: {
+              "spacetime-identity": callerIdentity,
+            },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          addresses: [databaseIdentity],
+        })
+      );
+
+    const { StdbClient } = await import("../src/shim/stdb-client.js");
+    const client = new StdbClient();
+
+    await expect(client.listDatabaseIdentities()).resolves.toEqual([
+      databaseIdentity,
     ]);
   });
 });

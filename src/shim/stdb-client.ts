@@ -194,12 +194,19 @@ export class StdbClient {
         return [];
       }
 
-      const body = (await response.json()) as { addresses?: unknown };
-      if (!Array.isArray(body.addresses)) {
+      const body = (await response.json()) as {
+        addresses?: unknown;
+        identities?: unknown;
+      };
+      const identities = Array.isArray(body.identities)
+        ? body.identities
+        : body.addresses;
+
+      if (!Array.isArray(identities)) {
         return [];
       }
 
-      return body.addresses
+      return identities
         .map((entry) => String(entry).trim())
         .filter((entry) => DATABASE_IDENTITY_PATTERN.test(entry));
     } catch {

@@ -55,7 +55,7 @@ describe("StdbClient HTTP discovery", () => {
     expect(first).toEqual(second);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/v1\/database\/example-app-db\/schema$/),
+      expect.stringMatching(/\/v1\/database\/example-app-db\/schema\?version=9$/),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: expect.stringMatching(/^Bearer /),
@@ -96,7 +96,7 @@ describe("StdbClient HTTP discovery", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      expect.stringMatching(/\/v1\/database\/.*\/schema$/),
+      expect.stringMatching(/\/v1\/database\/.*\/schema\?version=9$/),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: expect.stringMatching(/^Bearer /),

@@ -11,6 +11,7 @@ import type {
 const DATABASE_IDENTITY_PATTERN = /^[a-f0-9]{64}$/i;
 const API_ENDPOINT_PATTERN =
   /\/v1\/(?:database\/[^/]+(?:\/(?:identity|logs|names|schema|sql))?|identity\/[^/]+\/(?:databases|verify))$/i;
+const RAW_MODULE_DEF_VERSION = 9;
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, "\"\"")}"`;
@@ -258,7 +259,7 @@ export class StdbClient {
     databaseName: string
   ): Promise<StdbDatabaseSchema> {
     const response = await fetch(
-      `${this.discoveryDatabaseApiBaseUrl(databaseName)}/schema`,
+      this.databaseSchemaUrl(databaseName),
       {
         headers: {
           Authorization: `Bearer ${resolveDatabaseAuthToken(databaseName)}`,
@@ -293,6 +294,10 @@ export class StdbClient {
     return `${this.apiRoot(baseUrl)}/v1/identity/${encodeURIComponent(identity)}`;
   }
 
+  private databaseSchemaUrl(databaseName: string): string {
+    return `${this.discoveryDatabaseApiBaseUrl(databaseName)}/schema?version=${RAW_MODULE_DEF_VERSION}`;
+  }
+
   private async getCallerIdentity(): Promise<string | null> {
     const cached = this.callerIdentityPromise;
     if (cached) {
@@ -312,7 +317,7 @@ export class StdbClient {
 
   private async fetchCallerIdentity(): Promise<string | null> {
     const response = await fetch(
-      `${this.discoveryDatabaseApiBaseUrl(env.STDB_SOURCE_DATABASE)}/schema`,
+      this.databaseSchemaUrl(env.STDB_SOURCE_DATABASE),
       {
         headers: {
           Authorization: `Bearer ${resolveDatabaseAuthToken(

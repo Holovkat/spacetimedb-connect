@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type FetchMock = ReturnType<typeof vi.fn>;
-const ENV_KEYS = ["STDB_BASE_URL", "STDB_AUTH_TOKEN", "STDB_SOURCE_DATABASE"] as const;
+const ENV_KEYS = [
+  "STDB_BASE_URL",
+  "STDB_AUTH_TOKEN",
+  "STDB_SOURCE_DATABASE",
+  "STDB_DATABASES",
+  "OPS_STDB_DB",
+  "OPS_STDB_TOKEN",
+] as const;
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -25,6 +32,9 @@ describe("StdbClient HTTP discovery", () => {
     process.env.STDB_BASE_URL = "http://localhost:3000";
     process.env.STDB_AUTH_TOKEN = "test-token";
     process.env.STDB_SOURCE_DATABASE = "example-app-db";
+    delete process.env.STDB_DATABASES;
+    delete process.env.OPS_STDB_DB;
+    delete process.env.OPS_STDB_TOKEN;
   });
 
   afterEach(() => {
@@ -64,21 +74,18 @@ describe("StdbClient HTTP discovery", () => {
     );
   });
 
-  it("derives owned database identities over HTTP using the caller identity header", async () => {
-    const callerIdentity = "a".repeat(64);
+  it("derives owned database identities over HTTP using the source database owner", async () => {
+    const ownerIdentity = "a".repeat(64);
+    const sourceDatabaseIdentity = "d".repeat(64);
     const firstDatabase = "b".repeat(64);
     const secondDatabase = "c".repeat(64);
 
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse(
-          { reducers: [] },
-          {
-            headers: {
-              "spacetime-identity": callerIdentity,
-            },
-          }
-        )
+        jsonResponse({
+          database_identity: { __identity__: `0x${sourceDatabaseIdentity}` },
+          owner_identity: { __identity__: `0x${ownerIdentity}` },
+        })
       )
       .mockResolvedValueOnce(
         jsonResponse({
@@ -92,11 +99,12 @@ describe("StdbClient HTTP discovery", () => {
     await expect(client.listDatabaseIdentities()).resolves.toEqual([
       firstDatabase,
       secondDatabase,
+      sourceDatabaseIdentity,
     ]);
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      expect.stringMatching(/\/v1\/database\/.*\/schema\?version=9$/),
+      expect.stringMatching(/\/v1\/database\/example-app-db$/),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: expect.stringMatching(/^Bearer /),
@@ -106,26 +114,23 @@ describe("StdbClient HTTP discovery", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       expect.stringMatching(
-        new RegExp(`/v1/identity/${callerIdentity}/databases$`)
+        new RegExp(`/v1/identity/${ownerIdentity}/databases$`)
       )
     );
   });
 
   it("resolves discovered database names and falls back to identities when names are unavailable", async () => {
-    const callerIdentity = "a".repeat(64);
+    const ownerIdentity = "a".repeat(64);
+    const sourceDatabaseIdentity = "d".repeat(64);
     const firstDatabase = "b".repeat(64);
     const secondDatabase = "c".repeat(64);
 
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse(
-          { reducers: [] },
-          {
-            headers: {
-              "spacetime-identity": callerIdentity,
-            },
-          }
-        )
+        jsonResponse({
+          database_identity: sourceDatabaseIdentity,
+          owner_identity: ownerIdentity,
+        })
       )
       .mockResolvedValueOnce(
         jsonResponse({
@@ -135,6 +140,11 @@ describe("StdbClient HTTP discovery", () => {
       .mockResolvedValueOnce(
         jsonResponse({
           names: ["example-app-db"],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          names: ["example-ops-db"],
         })
       )
       .mockResolvedValueOnce(
@@ -148,25 +158,23 @@ describe("StdbClient HTTP discovery", () => {
     const client = new StdbClient();
 
     await expect(client.listDiscoveredDatabases()).resolves.toEqual([
-      secondDatabase,
+      sourceDatabaseIdentity,
       "example-app-db",
+      "example-ops-db",
     ]);
   });
 
   it("accepts legacy address discovery responses", async () => {
-    const callerIdentity = "a".repeat(64);
+    const ownerIdentity = "a".repeat(64);
+    const sourceDatabaseIdentity = "d".repeat(64);
     const databaseIdentity = "b".repeat(64);
 
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse(
-          { reducers: [] },
-          {
-            headers: {
-              "spacetime-identity": callerIdentity,
-            },
-          }
-        )
+        jsonResponse({
+          database_identity: sourceDatabaseIdentity,
+          owner_identity: ownerIdentity,
+        })
       )
       .mockResolvedValueOnce(
         jsonResponse({
@@ -179,6 +187,61 @@ describe("StdbClient HTTP discovery", () => {
 
     await expect(client.listDatabaseIdentities()).resolves.toEqual([
       databaseIdentity,
+      sourceDatabaseIdentity,
     ]);
+  });
+
+  it("uses configured database names and paired token mappings as discovery seeds", async () => {
+    process.env.STDB_DATABASES = "example-explicit-db";
+    process.env.OPS_STDB_DB = "example-token-db";
+    process.env.OPS_STDB_TOKEN = "ops-token";
+    const sourceOwner = "a".repeat(64);
+    const explicitOwner = "b".repeat(64);
+    const tokenOwner = "c".repeat(64);
+    const sourceDatabase = "d".repeat(64);
+    const explicitDatabase = "e".repeat(64);
+    const tokenDatabase = "f".repeat(64);
+
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          database_identity: { __identity__: `0x${sourceDatabase}` },
+          owner_identity: { __identity__: `0x${sourceOwner}` },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          database_identity: { __identity__: `0x${explicitDatabase}` },
+          owner_identity: { __identity__: `0x${explicitOwner}` },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          database_identity: { __identity__: `0x${tokenDatabase}` },
+          owner_identity: { __identity__: `0x${tokenOwner}` },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ identities: [] }))
+      .mockResolvedValueOnce(jsonResponse({ identities: [] }))
+      .mockResolvedValueOnce(jsonResponse({ identities: [] }));
+
+    const { StdbClient } = await import("../src/shim/stdb-client.js");
+    const client = new StdbClient();
+
+    await expect(client.listDatabaseIdentities()).resolves.toEqual([
+      sourceDatabase,
+      explicitDatabase,
+      tokenDatabase,
+    ]);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringMatching(/\/v1\/database\/example-token-db$/),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ops-token",
+        }),
+      })
+    );
   });
 });

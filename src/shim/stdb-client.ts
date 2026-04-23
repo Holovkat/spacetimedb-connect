@@ -8,18 +8,53 @@ import type {
   StdbTableRow,
 } from "./types.js";
 
-const DATABASE_IDENTITY_PATTERN = /^[a-f0-9]{64}$/i;
+const IDENTITY_PATTERN = /^[a-f0-9]{64}$/i;
 const API_ENDPOINT_PATTERN =
   /\/v1\/(?:database\/[^/]+(?:\/(?:identity|logs|names|schema|sql))?|identity\/[^/]+\/(?:databases|verify))$/i;
 const RAW_MODULE_DEF_VERSION = 9;
+
+type StdbDatabaseMetadata = {
+  database_identity?: unknown;
+  owner_identity?: unknown;
+};
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, "\"\"")}"`;
 }
 
+function normalizeIdentity(value: unknown): string | null {
+  const identityObject =
+    value && typeof value === "object"
+      ? (value as { __identity__?: unknown })
+      : null;
+  const candidate =
+    typeof value === "string"
+      ? value
+      : typeof identityObject?.__identity__ === "string"
+        ? identityObject.__identity__
+        : null;
+
+  const identity = candidate?.trim().replace(/^0x/i, "") ?? "";
+  return IDENTITY_PATTERN.test(identity) ? identity : null;
+}
+
+function normalizeIdentityList(entries: unknown): string[] {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries
+    .map((entry) => normalizeIdentity(entry))
+    .filter((entry): entry is string => entry !== null);
+}
+
+function uniqueSorted(values: Iterable<string>): string[] {
+  return [...new Set([...values].map((value) => value.trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
 export class StdbClient {
   private readonly schemaCache = new Map<string, Promise<StdbDatabaseSchema>>();
-  private callerIdentityPromise?: Promise<string | null>;
 
   async query(
     sql: string,
@@ -133,24 +168,9 @@ export class StdbClient {
   }
 
   async listDatabases(): Promise<string[]> {
-    const configured = parseCsvList(env.STDB_DATABASES);
+    const seeds = this.databaseDiscoverySeeds();
     const discovered = await this.listDiscoveredDatabases();
-    const combined = [...configured, ...discovered];
-    const unique = new Set<string>();
-
-    for (const databaseName of combined) {
-      const trimmed = databaseName.trim();
-      if (!trimmed) {
-        continue;
-      }
-      unique.add(trimmed);
-    }
-
-    if (unique.size === 0) {
-      unique.add(env.STDB_SOURCE_DATABASE);
-    }
-
-    return [...unique].sort((left, right) => left.localeCompare(right));
+    return uniqueSorted([...seeds, ...discovered]);
   }
 
   async databaseExists(databaseName: string): Promise<boolean> {
@@ -180,14 +200,43 @@ export class StdbClient {
   }
 
   async listDatabaseIdentities(): Promise<string[]> {
+    const databaseIdentities = new Set<string>();
+    const ownerIdentities = new Set<string>();
+
+    for (const databaseName of this.databaseDiscoverySeeds()) {
+      const metadata = await this.fetchDatabaseMetadata(databaseName);
+      const databaseIdentity = normalizeIdentity(metadata?.database_identity);
+      const ownerIdentity = normalizeIdentity(metadata?.owner_identity);
+
+      if (databaseIdentity) {
+        databaseIdentities.add(databaseIdentity);
+      }
+      if (ownerIdentity) {
+        ownerIdentities.add(ownerIdentity);
+      }
+    }
+
+    for (const ownerIdentity of ownerIdentities) {
+      const ownedDatabaseIdentities = await this.listOwnedDatabaseIdentities(
+        ownerIdentity
+      );
+      ownedDatabaseIdentities.forEach((identity) =>
+        databaseIdentities.add(identity)
+      );
+    }
+
+    return uniqueSorted(databaseIdentities);
+  }
+
+  async listOwnedDatabaseIdentities(ownerIdentity: string): Promise<string[]> {
     try {
-      const callerIdentity = await this.getCallerIdentity();
-      if (!callerIdentity) {
+      const normalizedOwnerIdentity = normalizeIdentity(ownerIdentity);
+      if (!normalizedOwnerIdentity) {
         return [];
       }
 
       const response = await fetch(
-        `${this.identityApiBaseUrl(callerIdentity)}/databases`
+        `${this.identityApiBaseUrl(normalizedOwnerIdentity)}/databases`
       );
 
       if (!response.ok) {
@@ -198,17 +247,9 @@ export class StdbClient {
         addresses?: unknown;
         identities?: unknown;
       };
-      const identities = Array.isArray(body.identities)
-        ? body.identities
-        : body.addresses;
+      const identities = body.identities ?? body.addresses;
 
-      if (!Array.isArray(identities)) {
-        return [];
-      }
-
-      return identities
-        .map((entry) => String(entry).trim())
-        .filter((entry) => DATABASE_IDENTITY_PATTERN.test(entry));
+      return normalizeIdentityList(identities);
     } catch {
       return [];
     }
@@ -305,45 +346,37 @@ export class StdbClient {
     return `${this.discoveryDatabaseApiBaseUrl(databaseName)}/schema?version=${RAW_MODULE_DEF_VERSION}`;
   }
 
-  private async getCallerIdentity(): Promise<string | null> {
-    const cached = this.callerIdentityPromise;
-    if (cached) {
-      return cached;
-    }
-
-    const pending = this.fetchCallerIdentity();
-    this.callerIdentityPromise = pending;
-
-    try {
-      return await pending;
-    } catch (error) {
-      this.callerIdentityPromise = undefined;
-      throw error;
-    }
+  private databaseDiscoverySeeds(): string[] {
+    return uniqueSorted([
+      env.STDB_SOURCE_DATABASE,
+      ...parseCsvList(env.STDB_DATABASES),
+      ...Object.keys(env.STDB_DATABASE_AUTH_TOKENS),
+    ]);
   }
 
-  private async fetchCallerIdentity(): Promise<string | null> {
-    const response = await fetch(
-      this.databaseSchemaUrl(env.STDB_SOURCE_DATABASE),
-      {
-        headers: {
-          Authorization: `Bearer ${resolveDatabaseAuthToken(
-            env.STDB_SOURCE_DATABASE
-          )}`,
-        },
+  private async fetchDatabaseMetadata(
+    databaseName: string
+  ): Promise<StdbDatabaseMetadata | null> {
+    try {
+      const response = await fetch(
+        this.discoveryDatabaseApiBaseUrl(databaseName),
+        {
+          headers: {
+            Authorization: `Bearer ${resolveDatabaseAuthToken(
+              databaseName
+            )}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return null;
       }
-    );
 
-    if (!response.ok) {
+      return (await response.json()) as StdbDatabaseMetadata;
+    } catch {
       return null;
     }
-
-    const callerIdentity = response.headers.get("spacetime-identity")?.trim();
-    if (!callerIdentity || !DATABASE_IDENTITY_PATTERN.test(callerIdentity)) {
-      return null;
-    }
-
-    return callerIdentity;
   }
 
   static rowHash(row: Record<string, unknown>): string {

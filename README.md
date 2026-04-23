@@ -1,6 +1,6 @@
 # spacetimedb-connect
 
-`spacetimedb-connect` lets teams use familiar PostgreSQL tools against SpacetimeDB v2.0.
+`spacetimedb-connect` lets teams use familiar PostgreSQL tools against SpacetimeDB v2.0 onwards.
 
 Instead of building a separate admin UI for every database, you run this connector, point your existing UI or CLI at it, and work with SpacetimeDB through a PostgreSQL-compatible connection surface.
 
@@ -98,10 +98,11 @@ Reducer/procedure support should be treated as an active work-in-progress surfac
 
 Database discovery is generic and HTTP-only for normal use:
 
-- derive the configured token identity from `GET /v1/database/:name_or_identity/schema?version=9`
-- list owned database identities through `GET /v1/identity/:identity/databases`
+- resolve configured seed databases through `GET /v1/database/:name_or_identity`
+- read each seed database's `owner_identity`
+- list owned database identities through `GET /v1/identity/:owner_identity/databases`
 - resolve identities through `GET /v1/database/:identity/names`
-- use `STDB_DATABASES=db_a,db_b` for databases that are reachable by token but not returned by SpacetimeDB's identity-owned database list
+- use `STDB_DATABASES=db_a,db_b` only as extra discovery seeds for cross-owner databases that SpacetimeDB will not return from the seed owner's database list
 
 The external `spacetime` CLI is not required for day-to-day connector use.
 

@@ -1,6 +1,6 @@
 # spacetimedb-connect
 
-`spacetimedb-connect` lets teams use familiar PostgreSQL tools against SpacetimeDB.
+`spacetimedb-connect` lets teams use familiar PostgreSQL tools against SpacetimeDB v2.0.
 
 Instead of building a separate admin UI for every database, you run this connector, point your existing UI or CLI at it, and work with SpacetimeDB through a PostgreSQL-compatible connection surface.
 

@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promisify } from "node:util";
 import { env, parseCsvList, resolveDatabaseAuthToken } from "../config.js";
 import { mapAlgebraicTypeToPgType } from "./normalize.js";
 import type {
@@ -10,10 +8,9 @@ import type {
   StdbTableRow,
 } from "./types.js";
 
-const execFileAsync = promisify(execFile);
 const DATABASE_IDENTITY_PATTERN = /^[a-f0-9]{64}$/i;
-const DATABASE_NAMES_ENDPOINT_PATTERN =
-  /\/v1\/database\/[^/]+\/names$/i;
+const API_ENDPOINT_PATTERN =
+  /\/v1\/(?:database\/[^/]+(?:\/(?:identity|logs|names|schema|sql))?|identity\/[^/]+\/(?:databases|verify))$/i;
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, "\"\"")}"`;
@@ -21,6 +18,7 @@ function quoteIdentifier(identifier: string): string {
 
 export class StdbClient {
   private readonly schemaCache = new Map<string, Promise<StdbDatabaseSchema>>();
+  private callerIdentityPromise?: Promise<string | null>;
 
   async query(
     sql: string,
@@ -28,7 +26,7 @@ export class StdbClient {
     options?: { preferAdmin?: boolean }
   ): Promise<StdbQueryResult[]> {
     const response = await fetch(
-      `${env.STDB_BASE_URL}/v1/database/${databaseName}/sql`,
+      `${this.queryApiBaseUrl(databaseName)}/sql`,
       {
         method: "POST",
         headers: {
@@ -182,17 +180,27 @@ export class StdbClient {
 
   async listDatabaseIdentities(): Promise<string[]> {
     try {
-      const { stdout } = await execFileAsync("spacetime", [
-        "list",
-        "--server",
-        env.STDB_DISCOVERY_SERVER ?? env.STDB_BASE_URL,
-        "-y",
-      ]);
+      const callerIdentity = await this.getCallerIdentity();
+      if (!callerIdentity) {
+        return [];
+      }
 
-      return stdout
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => DATABASE_IDENTITY_PATTERN.test(line));
+      const response = await fetch(
+        `${this.identityApiBaseUrl(callerIdentity)}/databases`
+      );
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const body = (await response.json()) as { addresses?: unknown };
+      if (!Array.isArray(body.addresses)) {
+        return [];
+      }
+
+      return body.addresses
+        .map((entry) => String(entry).trim())
+        .filter((entry) => DATABASE_IDENTITY_PATTERN.test(entry));
     } catch {
       return [];
     }
@@ -200,7 +208,7 @@ export class StdbClient {
 
   async resolveDatabaseNames(nameOrIdentity: string): Promise<string[]> {
     const response = await fetch(
-      `${this.databaseApiBaseUrl(nameOrIdentity)}/names`,
+      `${this.discoveryDatabaseApiBaseUrl(nameOrIdentity)}/names`,
       {
         headers: {
           Authorization: `Bearer ${env.STDB_AUTH_TOKEN}`,
@@ -241,33 +249,89 @@ export class StdbClient {
     }
   }
 
-  private databaseApiBaseUrl(nameOrIdentity: string): string {
-    const normalizedBaseUrl = env.STDB_BASE_URL.replace(/\/+$/, "");
-    if (DATABASE_NAMES_ENDPOINT_PATTERN.test(normalizedBaseUrl)) {
-      return normalizedBaseUrl.replace(/\/names$/i, "");
-    }
-    return `${normalizedBaseUrl}/v1/database/${encodeURIComponent(nameOrIdentity)}`;
+  private discoveryDatabaseApiBaseUrl(nameOrIdentity: string): string {
+    const baseUrl = env.STDB_DISCOVERY_SERVER ?? env.STDB_BASE_URL;
+    return this.databaseApiBaseUrl(nameOrIdentity, baseUrl);
   }
 
   private async fetchDatabaseSchema(
     databaseName: string
   ): Promise<StdbDatabaseSchema> {
-    const { stdout } = await execFileAsync(
-      "spacetime",
-      [
-        "describe",
-        "--json",
-        "--server",
-        env.STDB_DISCOVERY_SERVER ?? env.STDB_BASE_URL,
-        "-y",
-        databaseName,
-      ],
+    const response = await fetch(
+      `${this.discoveryDatabaseApiBaseUrl(databaseName)}/schema`,
       {
-        maxBuffer: 32 * 1024 * 1024,
+        headers: {
+          Authorization: `Bearer ${resolveDatabaseAuthToken(databaseName)}`,
+        },
       }
     );
 
-    return JSON.parse(stdout) as StdbDatabaseSchema;
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        `Spacetime schema fetch failed (${response.status} ${response.statusText}): ${body}`
+      );
+    }
+
+    return (await response.json()) as StdbDatabaseSchema;
+  }
+
+  private apiRoot(baseUrl: string): string {
+    return baseUrl.replace(/\/+$/, "").replace(API_ENDPOINT_PATTERN, "");
+  }
+
+  private databaseApiBaseUrl(nameOrIdentity: string, baseUrl: string): string {
+    return `${this.apiRoot(baseUrl)}/v1/database/${encodeURIComponent(nameOrIdentity)}`;
+  }
+
+  private queryApiBaseUrl(databaseName: string): string {
+    return this.databaseApiBaseUrl(databaseName, env.STDB_BASE_URL);
+  }
+
+  private identityApiBaseUrl(identity: string): string {
+    const baseUrl = env.STDB_DISCOVERY_SERVER ?? env.STDB_BASE_URL;
+    return `${this.apiRoot(baseUrl)}/v1/identity/${encodeURIComponent(identity)}`;
+  }
+
+  private async getCallerIdentity(): Promise<string | null> {
+    const cached = this.callerIdentityPromise;
+    if (cached) {
+      return cached;
+    }
+
+    const pending = this.fetchCallerIdentity();
+    this.callerIdentityPromise = pending;
+
+    try {
+      return await pending;
+    } catch (error) {
+      this.callerIdentityPromise = undefined;
+      throw error;
+    }
+  }
+
+  private async fetchCallerIdentity(): Promise<string | null> {
+    const response = await fetch(
+      `${this.discoveryDatabaseApiBaseUrl(env.STDB_SOURCE_DATABASE)}/schema`,
+      {
+        headers: {
+          Authorization: `Bearer ${resolveDatabaseAuthToken(
+            env.STDB_SOURCE_DATABASE
+          )}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const callerIdentity = response.headers.get("spacetime-identity")?.trim();
+    if (!callerIdentity || !DATABASE_IDENTITY_PATTERN.test(callerIdentity)) {
+      return null;
+    }
+
+    return callerIdentity;
   }
 
   static rowHash(row: Record<string, unknown>): string {

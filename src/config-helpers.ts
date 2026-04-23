@@ -45,8 +45,7 @@ export function parseBaseEnv(source: Record<string, string | undefined>) {
   return baseEnvSchema.parse({
     STDB_BASE_URL: source.STDB_BASE_URL,
     STDB_AUTH_TOKEN: source.STDB_AUTH_TOKEN,
-    STDB_ADMIN_AUTH_TOKEN:
-      source.STDB_ADMIN_AUTH_TOKEN ?? source.FMS_GLM_STDB_ADMIN_TOKEN,
+    STDB_ADMIN_AUTH_TOKEN: source.STDB_ADMIN_AUTH_TOKEN,
     STDB_SOURCE_DATABASE: source.STDB_SOURCE_DATABASE,
     STDB_SOURCE_SCHEMA: source.STDB_SOURCE_SCHEMA ?? "public",
     STDB_DATABASES: source.STDB_DATABASES,

@@ -1,6 +1,6 @@
 # spacetimedb-connect
 
-`spacetimedb-connect` lets teams use familiar PostgreSQL tools against SpacetimeDB v2.0.
+`spacetimedb-connect` lets teams use familiar PostgreSQL tools against SpacetimeDB v2.0 onwards.
 
 Instead of building a separate admin UI for every database, you run this connector, point your existing UI or CLI at it, and work with SpacetimeDB through a PostgreSQL-compatible connection surface.
 
@@ -23,24 +23,32 @@ Under the hood, the connector exposes a pgwire-compatible surface. For normal da
 
 ## Quick start
 
-1. Copy `.env.example` to `.env`
-2. Set `STDB_AUTH_TOKEN`
-   Optional:
-   - `STDB_ADMIN_AUTH_TOKEN` if write access uses a different token
-   - database-specific `*_DB` / `*_TOKEN` pairs in `~/.secure/.env`
-3. Install dependencies:
+Install the connector from GitHub:
 
 ```bash
-npm install
+npm install -g --install-links=true github:Holovkat/spacetimedb-connect
 ```
 
-4. Start the connector:
+For a pinned install, append a tag, branch, or commit SHA after `#`.
+The `--install-links=true` flag avoids broken symlinks when a local npm config sets `install-links=false`.
+
+Create a `.env` file in the directory where you will run the connector:
+
+```env
+STDB_BASE_URL=http://localhost:6900
+STDB_AUTH_TOKEN=your-spacetimedb-token
+STDB_SOURCE_DATABASE=example-app-db
+PGWIRE_HOST=127.0.0.1
+PGWIRE_PORT=45434
+```
+
+Start the connector:
 
 ```bash
-npm run serve:pgwire
+spacetimedb-connect serve
 ```
 
-5. Connect your SQL tool or CLI:
+Connect your SQL tool or CLI:
 
 - Host: `127.0.0.1`
 - Port: `45434`
@@ -50,6 +58,19 @@ npm run serve:pgwire
 
 Client-side username and password fields are placeholder values for PostgreSQL tools today.
 Actual upstream access to SpacetimeDB is controlled by the configured `STDB_AUTH_TOKEN` and optional `STDB_ADMIN_AUTH_TOKEN`.
+
+## Commands
+
+```bash
+spacetimedb-connect --help
+spacetimedb-connect serve
+spacetimedb-connect list-databases
+spacetimedb-connect list-tables
+```
+
+Running `spacetimedb-connect` with no command prints help. It does not start the optional Postgres mirror or run a sync job.
+
+For local development from this repository, use `npm install`, `npm run build`, and `npm run serve`.
 
 ## Current status
 
@@ -75,20 +96,23 @@ Reducer/procedure support should be treated as an active work-in-progress surfac
 
 ## Discovery and configuration
 
-Database discovery is generic:
+Database discovery is generic and HTTP-only for normal use:
 
-- use `spacetime list` against the configured runtime to get database identities
+- resolve configured seed databases through `GET /v1/database/:name_or_identity`
+- read each seed database's `owner_identity`
+- list owned database identities through `GET /v1/identity/:owner_identity/databases`
 - resolve identities through `GET /v1/database/:identity/names`
-- use `STDB_DATABASES=db_a,db_b` if you want to provide explicit names
+- use `STDB_DATABASES=db_a,db_b` only as extra discovery seeds for cross-owner databases that SpacetimeDB will not return from the seed owner's database list
+
+The external `spacetime` CLI is not required for day-to-day connector use.
 
 The examples in this repo use placeholder database names such as `example-app-db`.
-The current live integration tests happen to target an FMS-GLM environment, but the connector itself is intended for general SpacetimeDB databases.
 
 ## Optional debugging footnote
 
-If you want to compare connector behavior against a local Postgres instance for debugging or alignment work, there is an optional mirror path using `npm run postgres:up`, `npm run sync`, and `npm run sync-all`.
+If you want to compare connector behavior against a local Postgres instance for debugging or alignment work, this repository still includes an optional mirror path using `npm run postgres:up`, `npm run sync`, and `npm run sync-all`.
 
-That is a developer aid, not a normal runtime requirement for users of this connector.
+That is a developer aid, not a normal runtime requirement for users of the connector package.
 
 ## Notes
 

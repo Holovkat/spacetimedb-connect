@@ -9,15 +9,15 @@ describe("config helpers", () => {
   it("builds database token mappings from paired *_DB and *_TOKEN keys", () => {
     expect(
       buildDatabaseAuthTokens({
-        FMS_GLM_STDB_TT_DB: "fms-glm-org-tt",
-        FMS_GLM_STDB_TT_TOKEN: "tt-token",
-        FMS_GLM_STDB_ROAD_RUNNER_DB: "fms-glm-org-road-runner",
-        FMS_GLM_STDB_ROAD_RUNNER_TOKEN: "rr-token",
+        EXAMPLE_APP_STDB_MAIN_DB: "example-app-db",
+        EXAMPLE_APP_STDB_MAIN_TOKEN: "main-token",
+        EXAMPLE_APP_STDB_AUDIT_DB: "example-audit-db",
+        EXAMPLE_APP_STDB_AUDIT_TOKEN: "audit-token",
         PG_TARGET_DATABASE: "ignored",
       })
     ).toEqual({
-      "fms-glm-org-road-runner": "rr-token",
-      "fms-glm-org-tt": "tt-token",
+      "example-app-db": "main-token",
+      "example-audit-db": "audit-token",
     });
   });
 
@@ -34,6 +34,22 @@ describe("config helpers", () => {
       STDB_SOURCE_DATABASE: "example-app-db",
       PGWIRE_HOST: "127.0.0.1",
       PGWIRE_PORT: 45434,
+    });
+  });
+
+  it("ignores FMS-specific admin token fallbacks", () => {
+    expect(
+      parseBaseEnv({
+        STDB_BASE_URL: "http://localhost:6900",
+        STDB_AUTH_TOKEN: "token",
+        FMS_GLM_STDB_ADMIN_TOKEN: "legacy-token",
+        STDB_SOURCE_DATABASE: "example-app-db",
+      })
+    ).toMatchObject({
+      STDB_BASE_URL: "http://localhost:6900",
+      STDB_AUTH_TOKEN: "token",
+      STDB_ADMIN_AUTH_TOKEN: undefined,
+      STDB_SOURCE_DATABASE: "example-app-db",
     });
   });
 

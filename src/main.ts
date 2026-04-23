@@ -1,11 +1,26 @@
-import { pathToFileURL } from "node:url";
-import { env, getSyncEnv, parseTableList } from "./config.js";
-import { listenPgwireServer } from "./pgwire/server.js";
-import { normalizeResult } from "./shim/normalize.js";
-import { createTargetPool, ensureTargetDatabase, refreshTable } from "./shim/postgres.js";
-import { StdbClient } from "./shim/stdb-client.js";
+#!/usr/bin/env node
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import type { StdbClient } from "./shim/stdb-client.js";
 
-function filterTables(tableNames: string[]): string[] {
+const PUBLIC_COMMANDS = [
+  "help",
+  "serve",
+  "list-databases",
+  "list-tables",
+  "sync",
+  "sync-all",
+] as const;
+
+type CliCommand = (typeof PUBLIC_COMMANDS)[number] | "serve-pgwire";
+
+async function createStdbClient(): Promise<StdbClient> {
+  const { StdbClient } = await import("./shim/stdb-client.js");
+  return new StdbClient();
+}
+
+async function filterTables(tableNames: string[]): Promise<string[]> {
+  const { env, parseTableList } = await import("./config.js");
   const includes = parseTableList(env.SHIM_INCLUDE_TABLES);
   const excludes = new Set(parseTableList(env.SHIM_EXCLUDE_TABLES));
   const selected =
@@ -18,7 +33,7 @@ function filterTables(tableNames: string[]): string[] {
 
 export async function discoverTables(stdbClient: StdbClient): Promise<string[]> {
   const tables = await stdbClient.listPublicTables();
-  const filtered = filterTables(tables.map((table) => table.tableName));
+  const filtered = await filterTables(tables.map((table) => table.tableName));
 
   if (filtered.length === 0) {
     throw new Error("No tables selected for sync");
@@ -45,12 +60,19 @@ export async function discoverDatabases(stdbClient: StdbClient): Promise<string[
 }
 
 export async function syncDatabase(sourceDatabase: string, targetDatabase = sourceDatabase): Promise<void> {
+  const [{ normalizeResult }, { createTargetPool, ensureTargetDatabase, refreshTable }, { StdbClient }] =
+    await Promise.all([
+      import("./shim/normalize.js"),
+      import("./shim/postgres.js"),
+      import("./shim/stdb-client.js"),
+    ]);
+
   console.log(`Syncing ${sourceDatabase} -> ${targetDatabase}`);
 
   await ensureTargetDatabase(targetDatabase);
   const pool = createTargetPool(targetDatabase);
   const stdbClient = new StdbClient();
-  const tableNames = filterTables(
+  const tableNames = await filterTables(
     (await stdbClient.listPublicTables(sourceDatabase)).map((table) => table.tableName)
   );
 
@@ -74,11 +96,12 @@ export async function syncDatabase(sourceDatabase: string, targetDatabase = sour
 }
 
 export async function sync(): Promise<void> {
+  const { env, getSyncEnv } = await import("./config.js");
   await syncDatabase(env.STDB_SOURCE_DATABASE, getSyncEnv().PG_TARGET_DATABASE);
 }
 
 export async function syncAll(): Promise<void> {
-  const stdbClient = new StdbClient();
+  const stdbClient = await createStdbClient();
   const databaseNames = await discoverDatabases(stdbClient);
 
   console.log(`Discovered ${databaseNames.length} Spacetime databases`);
@@ -89,6 +112,10 @@ export async function syncAll(): Promise<void> {
 }
 
 export async function servePgwire(): Promise<void> {
+  const [{ env }, { listenPgwireServer }] = await Promise.all([
+    import("./config.js"),
+    import("./pgwire/server.js"),
+  ]);
   const server = await listenPgwireServer();
   console.log(
     `pgwire pass-through listening on ${env.PGWIRE_HOST}:${env.PGWIRE_PORT}`
@@ -100,37 +127,103 @@ export async function servePgwire(): Promise<void> {
   });
 }
 
-export async function runCli(command = process.argv[2] ?? "sync"): Promise<void> {
-  if (command === "sync") {
+export function buildHelpText(): string {
+  return [
+    "Usage: spacetimedb-connect <command>",
+    "",
+    "Commands:",
+    "  serve            Start the pgwire connector server",
+    "  list-databases   List reachable SpacetimeDB databases",
+    "  list-tables      List selected public tables from the source database",
+    "  sync             Optional Postgres debug/alignment sync for the source database",
+    "  sync-all         Optional Postgres debug/alignment sync for all discovered databases",
+    "  help             Show this help output",
+    "",
+    "Notes:",
+    "  No command prints this help instead of starting sync mode.",
+    "  The sync commands are optional debugging/alignment paths and still require Postgres config.",
+  ].join("\n");
+}
+
+export function normalizeCliCommand(command?: string): CliCommand | null {
+  if (!command || command === "help" || command === "-h" || command === "--help") {
+    return "help";
+  }
+
+  if (command === "serve") {
+    return "serve-pgwire";
+  }
+
+  if (
+    command === "serve-pgwire" ||
+    PUBLIC_COMMANDS.includes(command as (typeof PUBLIC_COMMANDS)[number])
+  ) {
+    return command as CliCommand;
+  }
+
+  return null;
+}
+
+export async function runCli(command?: string): Promise<void> {
+  const normalizedCommand = normalizeCliCommand(command);
+
+  if (!normalizedCommand) {
+    throw new Error(`Unknown command: ${command}`);
+  }
+
+  if (normalizedCommand === "help") {
+    console.log(buildHelpText());
+    return;
+  }
+
+  if (normalizedCommand === "sync") {
     await sync();
     return;
   }
 
-  if (command === "list-tables") {
-    const tableNames = await discoverTables(new StdbClient());
+  if (normalizedCommand === "list-tables") {
+    const tableNames = await discoverTables(await createStdbClient());
     console.log(tableNames.join("\n"));
     return;
   }
 
-  if (command === "list-databases" || command === "list-fms-databases") {
-    const databaseNames = await discoverDatabases(new StdbClient());
+  if (normalizedCommand === "list-databases") {
+    const databaseNames = await discoverDatabases(await createStdbClient());
     console.log(databaseNames.join("\n"));
     return;
   }
 
-  if (command === "sync-all" || command === "sync-fms") {
+  if (normalizedCommand === "sync-all") {
     await syncAll();
     return;
   }
 
-  if (command === "serve-pgwire") {
+  if (normalizedCommand === "serve-pgwire") {
     await servePgwire();
     return;
   }
-
-  throw new Error(`Unknown command: ${command}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await runCli();
+function isDirectCliInvocation(): boolean {
+  if (!process.argv[1]) {
+    return false;
+  }
+
+  try {
+    return (
+      realpathSync(process.argv[1]) ===
+      realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectCliInvocation()) {
+  try {
+    await runCli(process.argv[2]);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
